@@ -1,0 +1,6 @@
+
+# Model
+model: 'resnet'
+backbone_arch: 'resnet'
+ckpt_path: 'C:\\Users\\taindp\\working\\data-centric\\model\\exp_mmptrack\\checkpoint_e9.pkl'
+device: 'cpu'

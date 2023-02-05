@@ -1,0 +1,17 @@
+*.zip
+*.mat
+*.jpg
+*.png
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+.vscode
+*/__pycache__/*
+./code/GFN/src/*/__pycache__/*
+# */data
+*.cpython-37.pyc
+*.pkl
+*.pth
+*.avi
+*.json
+*.tar
+*.html
