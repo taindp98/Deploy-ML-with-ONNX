@@ -241,6 +241,39 @@ class SeqNeXt(nn.Module):
         self.lw_box_cls = config['lw_box_cls']
         self.lw_box_reid = config['lw_box_reid']
 
+    def fast_inference(self, images: torch.Tensor, targets: torch.Tensor):
+        """
+        query_img_as_gallery: Set to True to detect all people in the query image.
+            Meanwhile, the gt box should be the first of the detected boxes.
+            This option serves CBGM (not implemented for SeqNeXt).
+        """
+        # targets = torch.FloatTensor([[0.,0., 900, 1500]]).to(self.device)
+        if targets.sum().item() != 0.:
+            
+            targets = [{"boxes" : targets}]
+        else:
+            targets = None
+        print(targets)
+        bb_features = self.backbone(images)
+
+        reid_features = bb_features
+        if targets:
+            ## query
+            boxes = [t["boxes"] for t in targets]
+            box_features = self.roi_heads.reid_roi_pool(reid_features, boxes, [list(images.size()[-2:])])
+            box_features = self.roi_heads.reid_head(box_features)
+            embeddings, _ = self.roi_heads.embedding_head(box_features)
+            embeddings = embeddings.split(1, 0)
+            return embeddings
+        else:
+            ## gallery
+            rpn_features = bb_features
+            images.tensors = images
+            images.image_sizes = [list(images.size()[-2:])]
+            proposals, _ = self.rpn(images, rpn_features, targets)
+            detections, _ = self.roi_heads(bb_features, proposals, [list(images.size()[-2:])], targets, False)
+            return detections
+
 
     def inference(self, images, targets=None, query_img_as_gallery=False, inference_mode=None):
         """
