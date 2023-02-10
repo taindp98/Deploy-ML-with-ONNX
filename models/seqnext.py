@@ -19,7 +19,9 @@ from torchvision.ops import boxes as box_ops
 # Package imports
 ## Models
 from models.backbone import build_resnet, build_convnext
-from models.transform import GeneralizedRCNNTransform
+# from models.transform import GeneralizedRCNNTransform
+from torchvision.models.detection.transform import GeneralizedRCNNTransform
+
 from models.gfn import GalleryFilterNetwork
 ## Losses
 from losses.oim_loss import OIMLossSafe
@@ -225,12 +227,17 @@ class SeqNeXt(nn.Module):
         )
 
         # batch and pad images
-        transform = GeneralizedRCNNTransform()
+        # transform = GeneralizedRCNNTransform()
 
         self.backbone = backbone
         self.rpn = rpn
         self.roi_heads = roi_heads
-        self.transform = transform
+        self.transform = GeneralizedRCNNTransform(
+            min_size=900,
+            max_size=1500,
+            image_mean=[0.485, 0.456, 0.406],
+            image_std=[0.229, 0.224, 0.225],
+        )
 
         # loss weights
         self.lw_rpn_reg = config['lw_rpn_reg']
@@ -241,38 +248,43 @@ class SeqNeXt(nn.Module):
         self.lw_box_cls = config['lw_box_cls']
         self.lw_box_reid = config['lw_box_reid']
 
-    def fast_inference(self, images: torch.Tensor, targets: torch.Tensor):
+    def query_inference(self, images: torch.Tensor, targets: torch.Tensor):
+        """
+        query_img_as_gallery: Set to True to detect all people in the query image.
+            Meanwhile, the gt box should be the first of the detected boxes.
+            This option serves CBGM (not implemented for SeqNeXt).
+        """
+        targets = ({"boxes" : targets},)
+        images, targets = self.transform(images, targets)
+        
+        bb_features = self.backbone(images.tensors)
+        reid_features = bb_features
+        boxes = [t["boxes"] for t in targets]
+        box_features = self.roi_heads.reid_roi_pool(reid_features, boxes, images.image_sizes)
+        box_features = self.roi_heads.reid_head(box_features)
+        embeddings, _ = self.roi_heads.embedding_head(box_features)
+        embeddings = embeddings.split(1, 0)
+        return embeddings
+
+    def gallery_inference(self, images: torch.Tensor):
         """
         query_img_as_gallery: Set to True to detect all people in the query image.
             Meanwhile, the gt box should be the first of the detected boxes.
             This option serves CBGM (not implemented for SeqNeXt).
         """
         # targets = torch.FloatTensor([[0.,0., 900, 1500]]).to(self.device)
-        if targets.sum().item() != 0.:
-            
-            targets = [{"boxes" : targets}]
-        else:
-            targets = None
-        print(targets)
-        bb_features = self.backbone(images)
+        original_image_sizes = [img.shape[-2:] for img in images]
 
-        reid_features = bb_features
-        if targets:
-            ## query
-            boxes = [t["boxes"] for t in targets]
-            box_features = self.roi_heads.reid_roi_pool(reid_features, boxes, [list(images.size()[-2:])])
-            box_features = self.roi_heads.reid_head(box_features)
-            embeddings, _ = self.roi_heads.embedding_head(box_features)
-            embeddings = embeddings.split(1, 0)
-            return embeddings
-        else:
-            ## gallery
-            rpn_features = bb_features
-            images.tensors = images
-            images.image_sizes = [list(images.size()[-2:])]
-            proposals, _ = self.rpn(images, rpn_features, targets)
-            detections, _ = self.roi_heads(bb_features, proposals, [list(images.size()[-2:])], targets, False)
-            return detections
+        targets = None
+        images, targets = self.transform(images, targets)
+        bb_features = self.backbone(images.tensors)
+        rpn_features = bb_features
+        proposals, _ = self.rpn(images, rpn_features, targets)
+        detections, _ = self.roi_heads(bb_features, proposals, images.image_sizes, targets, False)
+        # detections = self.transform.postprocess(
+        #         detections, images.image_sizes, original_image_sizes
+        #     )
+        return detections[0]['boxes']
 
 
     def inference(self, images, targets=None, query_img_as_gallery=False, inference_mode=None):

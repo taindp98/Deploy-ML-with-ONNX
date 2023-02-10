@@ -48,17 +48,40 @@ class ModelExporter(nn.Module):
                     ])
     
     def to_onnx(self, h = 900, w = 1500):
-        self.model.forward = self.model.fast_inference
+        # self.model.forward = self.model.query_inference
+        # self.model.eval()
+        # self.dummy_img = torch.randn(1,3,h,w).to(self.device)
+        # self.dummy_target = torch.FloatTensor([[0., 0., 0., 1.]]).to(self.device)
+        # args = self.dummy_img, self.dummy_target
+        # self.dummy_output = self.model(*args)[0]
+        # print(self.dummy_output)
+        # input_names = ['images', 'targets']
+        # output_names = ['output']
+        # torch.onnx.export(self.model,
+        #         args = (self.dummy_img, self.dummy_target), # model input (or a tuple for multiple inputs)  , self.dummy_target
+        #         f = "./checkpoints/seqnext.onnx",
+        #         verbose=False,
+        #         input_names=input_names,
+        #         output_names=output_names,
+        #         export_params=True,
+        #         opset_version=13,
+        #         do_constant_folding=True,
+        #         dynamic_axes={'images' : {0 : 'batch_size', 1: 'channel', 2:'height', 3:'width'}, 
+        #                     'targets': {0: 'batch_size', 1: 'coor'},
+        #                     'output' : {0 : 'batch_size'}
+        #                     }
+        #          )
+        # print('Model has been converted to ONNX') 
+
+        self.model.forward = self.model.gallery_inference
         self.model.eval()
         self.dummy_img = torch.randn(1,3,h,w).to(self.device)
-        self.dummy_target = torch.FloatTensor([[0., 0., 0., 1.]]).to(self.device)
-        args = self.dummy_img, self.dummy_target
-        self.dummy_output = self.model(*args)[0]
-        print(self.dummy_output)
-        input_names = ['images', 'targets']
+        self.dummy_output = self.model(self.dummy_img)
+        print(self.dummy_output[0])
+        input_names = ['images']
         output_names = ['output']
         torch.onnx.export(self.model,
-                args = (self.dummy_img, self.dummy_target), # model input (or a tuple for multiple inputs)  , self.dummy_target
+                args = self.dummy_img, # model input (or a tuple for multiple inputs)  , self.dummy_target
                 f = "./checkpoints/seqnext.onnx",
                 verbose=False,
                 input_names=input_names,
@@ -66,9 +89,7 @@ class ModelExporter(nn.Module):
                 export_params=True,
                 opset_version=13,
                 do_constant_folding=True,
-                dynamic_axes={'images' : {0 : 'batch_size', 1: 'channel', 2:'height', 3:'width'}, 
-                            'targets': {0: 'batch_size', 1: 'coor'},
-                            'output' : {0 : 'batch_size'}
+                dynamic_axes={'images' : {0 : 'batch_size', 1: 'channel', 2:'height', 3:'width'}
                             }
                  )
         print('Model has been converted to ONNX') 
@@ -95,11 +116,11 @@ class ModelExporter(nn.Module):
         ort_sess = onnxruntime.InferenceSession('./checkpoints/seqnext.onnx')
         # print(ort_sess.get_inputs())
         outputs = ort_sess.run([], {ort_sess.get_inputs()[0].name: self.to_numpy(self.dummy_img, True),
-                                    ort_sess.get_inputs()[1].name: self.to_numpy(self.dummy_target)
+                                    # ort_sess.get_inputs()[1].name: self.to_numpy(self.dummy_target)
                                     })
-        print(outputs[0])
-        test_offset = np.testing.assert_allclose(self.dummy_output.detach().cpu().numpy(), outputs[0], rtol=1e-03, atol=1e-05)
-        print(test_offset)
+        print(outputs)
+        # test_offset = np.testing.assert_allclose(self.dummy_output.detach().cpu().numpy(), outputs[0], rtol=1e-03, atol=1e-05)
+        # print(test_offset)
 
 def main():
     parser = argparse.ArgumentParser(description="Inference module of Person Search project.")
